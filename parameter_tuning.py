@@ -323,7 +323,7 @@ def grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats,
         step_size_values = [0.1, 0.05, 0.01]  # Step size for the gradient descent
         rel_tol_values = [1e-4]  # Relative tolerance for convergence
         delta_values = [1e-2, 1e-3, 1e-4]  # Delta parameter for robustness
-        bias_values = [0.1, 0.01, 0.001]  # Bias in the estimation process
+        bias_values = [0.01]  # Bias in the estimation process
         T_w_values = [10, 30, 50]  # Window length for exploration-exploitation balance
         sigma_w_values = [0.5, 1, 2]  # Standard deviation of the noise in the dynamics
         S_values = [20, 50]  # Scaling term - bound on parameter space

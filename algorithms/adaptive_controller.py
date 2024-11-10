@@ -20,10 +20,50 @@ import os
 
 
 class AdaptiveController():
+    """
+        Implements adaptive controllers for linear quadratic control problems.
+
+        This class supports the following algorithms:
+        - Augmented Reward-Biased Maximum Likelihood Estimator (ARBMLE)
+        - Stabilizing Learning (STABL)
+        - Proximal Policy Optimization (PPO)
+
+        It provides methods for parameter estimation, gain matrix computation, and running experiments.
+        """
     def __init__(self, A, B, Q, R, horizon, T_init, reg, algorithm, cur_seed,
                  num_restarts=5, max_iters=500, step_size=0.05, rel_tol=1e-5,
                  delta=1e-3, bias=0.01, T_w=35, sigma_w=2, S=100, plot_actions=False, plot_costs=False,
                  plot_states=False, nonlinearity=False, nonlinear_case=None, problem_name_nonlin=None):
+        """
+            Initializes the AdaptiveController with system parameters and algorithm settings.
+
+            Parameters:
+            - A (ndarray): State transition matrix of the true system.
+            - B (ndarray): Control input matrix of the true system.
+            - Q (ndarray): State cost matrix.
+            - R (ndarray): Control input cost matrix.
+            - horizon (int): Total time steps for the experiment.
+            - T_init (int): Initial time steps using a stabilizing controller.
+            - reg (float): Regularization parameter for least squares estimation.
+            - algorithm (str): Algorithm to use ('ARBMLE', 'STABL', or 'OPTIMAL').
+            - cur_seed (int): Random seed for reproducibility.
+            - num_restarts (int, optional): Number of restarts for gradient descent.
+            - max_iters (int, optional): Maximum iterations for gradient descent.
+            - step_size (float, optional): Step size for gradient descent.
+            - rel_tol (float, optional): Relative tolerance for convergence.
+            - delta (float, optional): Confidence level for confidence intervals.
+            - bias (float, optional): Bias parameter for ARBMLE.
+            - T_w (int, optional): Window size for STABL algorithm.
+            - sigma_w (float, optional): Additive noise standard deviation for STABL.
+            - S (int, optional): Upper bound on the noise norm.
+            - plot_actions (bool, optional): Whether to plot control actions.
+            - plot_costs (bool, optional): Whether to plot costs.
+            - plot_states (bool, optional): Whether to plot states.
+            - nonlinearity (bool, optional): Whether to include nonlinearity in the system.
+            - nonlinear_case (str, optional): Type of nonlinearity.
+            - problem_name_nonlin (str, optional): Name of the nonlinear problem.
+            """
+
         # Set system dynamics
         np.random.seed(cur_seed)
         self.cur_seed = cur_seed
@@ -46,6 +86,7 @@ class AdaptiveController():
         # Initialize gain matrices (also accounting for nonlinear linearithmic case) and setting nonlinear constant c
         self.constant_nonlin = None
         A_substitute = np.copy(self.A_star)
+        # Handle nonlinearity cases and set constant_nonlin based on the problem
         if self.nonlinearity:
             if self.nonlinear_case == "x_sin(x)":
                 if self.problem_name_nonlin == "Boeing":
@@ -65,6 +106,7 @@ class AdaptiveController():
                 elif self.problem_name_nonlin == "UAV":
                     self.constant_nonlin = 0.003
 
+                # Modify the A_substitute matrix to account for the nonlinearity
                 # Add c*log(2) to the diagonal of A_star
                 c_log_2_term = np.log(2) * self.constant_nonlin
                 np.fill_diagonal(A_substitute, np.diagonal(A_substitute) + c_log_2_term)
@@ -116,6 +158,20 @@ class AdaptiveController():
         self.timesteps_recording = None
 
     def project_weighted_ball(self, M, theta_center, cov, eps):
+        """
+        Projects matrix M onto a weighted Frobenius norm ball centered at theta_center.
+
+        Parameters:
+        - M (ndarray): The matrix to be projected.
+        - theta_center (ndarray): Center of the projection ball.
+        - cov (ndarray): Covariance matrix used for weighting.
+        - eps (float): Squared radius of the ball.
+
+        Returns:
+        - theta_star (ndarray): The projected matrix.
+        """
+
+        # If M is already centered, adjust the projection accordingly
         assert len(M.shape) == 2
         assert M.shape == theta_center.shape
         assert len(cov.shape) == 2
@@ -128,22 +184,22 @@ class AdaptiveController():
             ret += theta_center
             return ret
 
-        # Check easy case:
+        # Check if M is within the ball; if so, return M
         if np.trace(M.dot(cov).dot(M.T)) <= eps:
             return M
 
-        # Otherwise, solution takes form
-        # theta_star = M (I + lam * cov)^{-1} for some lam > 0
-        # Solve using eigendecomposition
+        # Compute the projection using eigen decomposition
+        # The solution takes the form theta_star = M (I + lambda * cov)^{-1}
         w, V = np.linalg.eigh(cov)
 
-        # Find lambda such that
+        # Find lambda such that the constraint is met
         # Tr( M * (I + lambda * cov)^{-1} cov * (I + lambda * cov)^{-1} M.T ) = eps
         MV = M.dot(V)
         VTMT_MV = MV.T.dot(MV)
         term2 = np.diag(VTMT_MV)
 
         def func(lam):
+            # Function to find the root for lambda
             assert lam >= 0
             term1 = (w / ((1 + lam * w) ** 2))
             val = eps - np.sum(term1 * term2)
@@ -151,6 +207,7 @@ class AdaptiveController():
                 val = 0
             return val
 
+        # Initialize lambda bounds and solve for lambda
         lam_ub = 1
         lam_lb = 0
         while func(lam_lb) <= 0 and func(2 * lam_ub) < 0:
@@ -159,6 +216,7 @@ class AdaptiveController():
 
         lam_star, _ = scipy.optimize.brentq(func, lam_lb, lam_ub, full_output=True)
 
+        # Compute the projected matrix
         theta_star = MV.dot(np.diag(1 / (1 + lam_star * w))).dot(V.T)
 
         return theta_star
@@ -183,7 +241,9 @@ class AdaptiveController():
 
     def get_next_state(self, w):
         next_state = np.dot(self.A_star, self.x) + np.dot(self.B_star, self.u) + w
+        # Handle nonlinearity cases
         if self.nonlinearity:
+            # Set constant_nonlin based on the problem
             c = self.constant_nonlin
             if self.nonlinear_case == "x_sin(x)":
                 next_state += c * self.x * np.sin(self.x)
@@ -215,6 +275,14 @@ class AdaptiveController():
             return self.theta_star
 
     def confidence_interval(self):
+        """
+       Calculates the confidence interval (epsilon) used in parameter estimation.
+
+       Uses concentration inequalities based on the determinant of the covariance matrix.
+
+       Returns:
+       - eps (float): The computed confidence interval.
+       """
         term1 = np.sqrt(np.linalg.det(self.cov))
         term2 = np.sqrt(np.linalg.det(self.reg * np.eye(self.n + self.m)))
         term3 = term1 / (term2 * self.delta)
@@ -233,30 +301,47 @@ class AdaptiveController():
         self.Z = np.concatenate((self.states[:, :self.t - 1], self.inputs[:, :self.t - 1])).T
 
     def run_experiment(self, noise, input_noise, reg):
+        """
+        Runs the adaptive control experiment using the specified algorithm.
+
+        Parameters:
+        - noise (ndarray): Process noise for each time step.
+        - input_noise (ndarray): Input noise for exploration during the initial phase.
+        - reg (float): Regularization parameter for parameter estimation.
+        """
         all_actions, all_states = [], []
         all_states.append(self.x)
         all_actions.append(self.u)
         try:
+            # Initial exploration phase using a stabilizing controller
             while self.t < self.T_init:
+                # Apply stabilizing control input with added exploration noise
                 self.u = self.get_input(self.K_init) + input_noise[:, self.t]
                 all_actions.append(self.u)
+                # Calculate cost and update state
                 self.c = self.calculate_cost(self.x, self.u)
                 self.x = self.get_next_state(noise[:, self.t])
                 all_states.append(self.x)
                 self.t += 1
                 self.update_history()
 
+            # Main adaptive control loop
             while self.t < self.horizon + self.T_init - 1:
+                # Estimate system parameters and compute control gain
                 theta_t = self.get_estimate(reg)
                 Kt, _, J = self.get_gain_matrix(theta_t)
                 last_cov = np.linalg.det(self.cov)
                 episode_length = 0
 
+                # Continue until sufficient new information is gathered
                 while ((np.linalg.det(self.cov) <= 2 * last_cov) or (episode_length < 10)) and self.t < self.horizon + self.T_init - 1:
+                    # Apply control input using the current gain matrix
                     self.u = self.get_input(Kt)
                     all_actions.append(self.u)
+                    # Add exploration noise for STABL algorithm during the initial window
                     if self.rl_algo == 'STABL' and self.t <= self.T_init + self.T_w:
                         self.u += np.random.normal(0, self.sigma_w)
+                    # Calculate cost and update state
                     self.c = self.calculate_cost(self.x, self.u)
                     self.x = self.get_next_state(noise[:, self.t])
                     all_states.append(self.x)
@@ -269,33 +354,6 @@ class AdaptiveController():
                 return
             else:
                 raise e
-
-        if self.cur_seed == 0 and False:  # ToDo: Take Out!
-            cov_A = self.cov[:self.n, :self.n]
-            cov_B = self.cov[self.n:, self.n:]
-
-            print("Cov")
-            print(self.cov)
-            print("Cov A")
-            print(cov_A)
-            print("Cov B")
-            print(cov_B)
-
-            confidence_bounds_A = np.sqrt(cov_A)
-            confidence_bounds_B = np.sqrt(cov_B)
-
-            # Final estimated matrices A and B
-            estimated_A = self.theta_emp[:, :self.n]
-            estimated_B = self.theta_emp[:, self.n:]
-
-            print(f"Final Estimated A matrix:\n", estimated_A)
-            print(f"Confidence bounds for A matrix (element-wise):\n", confidence_bounds_A)
-
-            print(f"Final Estimated B matrix:\n", estimated_B)
-            print(f"Confidence bounds for B matrix (element-wise):\n", confidence_bounds_B)
-
-            print(f"\nTrue system matrices:\nA=", self.A_star)
-            print(f"\nB=", self.B_star)
 
         if self.plot_costs:
             states_np = np.array(all_states)
@@ -319,8 +377,6 @@ class AdaptiveController():
             self.state_costs_recording = state_costs
             self.input_costs_recording = input_costs
             self.timesteps_recording = timesteps
-
-            return  # ToDo: Take out!
 
             # 1. Create stacked subplots
             fig, ax = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
@@ -584,8 +640,6 @@ class AdaptiveController():
             self.input_costs_recording = input_costs
             self.timesteps_recording = timesteps
 
-            return  # ToDo: Take out!
-
             # 1. Create stacked subplots
             fig, ax = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
 
@@ -741,6 +795,19 @@ class ValueNetwork(torch.nn.Module):
 
 
 class ProximalPolicyOptimization(AdaptiveController):
+    """
+    Extends AdaptiveController to implement the Proximal Policy Optimization (PPO) algorithm.
+
+    Parameters:
+    - gamma (float, optional): Discount factor for rewards.
+    - lambda_ (float, optional): GAE (Generalized Advantage Estimation) parameter.
+    - epsilon (float, optional): Clipping parameter for PPO.
+    - lr_policy (float, optional): Learning rate for the policy network.
+    - lr_value (float, optional): Learning rate for the value network.
+    - std_clamp_max (float, optional): Maximum standard deviation for action distribution.
+    - update_steps (int, optional): Number of steps between policy updates.
+    - Additional parameters inherited from AdaptiveController.
+    """
     def __init__(self, A, B, Q, R, horizon, T_init, reg, algorithm, cur_seed,
                  gamma=1.0, lambda_=1.0, epsilon=0.2, lr_policy=1e-3, lr_value=1e-3, std_clamp_max=0.5,
                  update_steps=10, plot_actions=False, plot_costs=False, plot_states=False, nonlinearity=False,
@@ -765,6 +832,18 @@ class ProximalPolicyOptimization(AdaptiveController):
         self.optimizer_value = torch.optim.Adam(self.value_net.parameters(), lr=lr_value)
 
     def ppo_loss(self, old_policy, states, actions, advantages):
+        """
+        Computes the PPO loss function.
+
+        Parameters:
+        - old_policy (LinearPolicy): The policy from the previous update.
+        - states (Tensor): Batch of states.
+        - actions (Tensor): Batch of actions taken.
+        - advantages (Tensor): Advantage estimates for each state-action pair.
+
+        Returns:
+        - loss (Tensor): The computed PPO loss.
+        """
         # Get the action distribution from the current policy
         new_dist = self.policy(states)
 
@@ -926,12 +1005,6 @@ class ProximalPolicyOptimization(AdaptiveController):
             else:
                 raise e
 
-        if self.cur_seed == 0 and False:  # ToDo: Take Out!
-            # Extract the learned K matrix from the policy network's linear layer
-            estimated_K = self.policy.linear.weight.detach().cpu().numpy()
-            print(f"Final Estimated K matrix for PPO:\n", estimated_K)
-            print(f"\nTrue K matrix:\n,", self.K_star)
-
         if self.plot_costs:
             states_np = np.array(all_states)
             actions_np = np.array(all_actions)
@@ -955,8 +1028,6 @@ class ProximalPolicyOptimization(AdaptiveController):
             self.state_costs_recording = state_costs
             self.input_costs_recording = input_costs
             self.timesteps_recording = timesteps
-
-            return  # ToDo: Take out!
 
             # 1. Create stacked subplots
             fig, ax = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
