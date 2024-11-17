@@ -30,6 +30,30 @@ rgblist = sns.color_palette('tab10')
 
 # Method to run single instances with specific parameters and with additional options
 def run_single():
+    """
+    Run a single experiment with specified configurations.
+
+    This function sets up and executes experiments on a selected control system using specified algorithms.
+    Users can adjust various run parameters such as plotting options, system dynamics, noise characteristics,
+    disturbances, and nonlinearities.
+
+    Configurable Options:
+        - Select which algorithms to test (ARBMLE, STABL, PPO, LQR).
+        - Choose the system dynamics (Boeing, UAV, or Cart Pole).
+        - Set experiment parameters like horizon length, number of repeats, and regularization.
+        - Adjust noise settings, including skewness and multiplicative scaling.
+        - Introduce disturbances at specified time steps.
+        - Enable or disable nonlinearity in the system dynamics.
+        - Choose whether to plot actions, states, costs, and cost splits.
+
+    The function runs the experiments for the selected algorithms, records costs, and optionally plots the results.
+    It also calculates cumulative costs and prints summary statistics.
+
+    Returns:
+        None. Outputs are printed to the console, and plots are saved if plotting is enabled.
+    """
+
+
     # Adapt run parameters according to needs
     plot_actions = False
     plot_states = False
@@ -50,8 +74,8 @@ def run_single():
 
     n, m = B_star.shape
 
-    horizon = 1000  #200  # length of each experiment
-    num_repeats = 10  # 200  # number of repetitions
+    horizon = 200  # length of each experiment
+    num_repeats = 200  # number of repetitions
     reg = 1e-4  # Regularization
     T_init = 30  # Initial time step for stabilizing controller
 
@@ -195,7 +219,6 @@ def run_single():
                                       cost_LQR[:,T_init-1:], problem, "LQR")
         print(f"Plotted and saved cost parts and total costs!")
 
-
     # After the loop where the costs are stored
     if test_ARBMLE and test_LQR and print_max_dif:
         # Calculate cumulative costs for each algorithm if not already done
@@ -272,8 +295,6 @@ def plot_cost_parts_and_total(timesteps, state_costs, input_costs, total_costs, 
     ax[1].legend()
 
     # Plot total cost
-    mean_costs[-1] = mean_costs[-2]
-    median_costs[-1] = median_costs[-2]  # ToDo: take Out!
     low_costs[-1] = low_costs[-2]
     ax[2].plot(timesteps, mean_costs, label="Total Cost $c(x,u)$", color='r')
     ax[2].plot(timesteps, median_costs, color='r', linestyle='--')
@@ -341,12 +362,36 @@ def plot_cost_parts_and_total(timesteps, state_costs, input_costs, total_costs, 
 
 # Function to calculate the theoretical mean of a skewed normal distribution
 def skewnorm_mean(alpha, omega, xi):
+    """
+    Calculate the theoretical mean of a skew-normal distribution.
+
+    Parameters:
+        alpha (float): Skewness parameter.
+        omega (float): Scale parameter.
+        xi (float): Location parameter.
+
+    Returns:
+        float: The mean of the skew-normal distribution.
+    """
     delta = alpha / np.sqrt(1 + alpha ** 2)
     return xi + omega * delta * np.sqrt(2 / np.pi)
 
 
 # Function to generate skew-normal distribution
 def generate_skewed_noise(m, T, alpha, omega, seed=None):
+    """
+    Generate skew-normal noise with zero mean for simulations.
+
+    Parameters:
+        m (int): Number of dimensions.
+        T (int): Number of time steps.
+        alpha (float): Skewness parameter.
+        omega (float): Scale parameter.
+        seed (int, optional): Random seed for reproducibility.
+
+    Returns:
+        np.ndarray: Skew-normal noise array of shape (m, T) with zero mean.
+    """
     # Calculate the theoretical mean of the distribution
     theoretical_mean = skewnorm_mean(alpha, omega, 0)
     # Adjust location parameter xi to shift the mean to zero
@@ -364,6 +409,33 @@ def start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,
                      nonlinearity=False, nonlinear_case=None,
                      plot_actions=False, plot_states=False,
                      save_file_name="", run_optimal=False):
+    """
+    Run experiments across multiple control systems with specified configurations.
+
+    This function executes experiments on predefined control systems (Boeing, UAV, CartPole)
+    using selected algorithms under various settings such as noise levels, disturbances,
+    skewness, and nonlinearities. It saves the cumulative costs for later analysis.
+
+    Parameters:
+        horizon (int): Length of each experiment run.
+        num_repeats (int): Number of repetitions for each experiment.
+        reg (float): Regularization parameter for the controllers.
+        T_init (int): Initial time steps using a stabilizing controller.
+        noise_multiplicator (float, optional): Multiplier to scale noise magnitude.
+        disturbance_step (bool, optional): Whether to introduce a disturbance.
+        disturbance_time (int, optional): Time step at which to apply the disturbance.
+        skewness (float, optional): Skewness parameter for the noise distribution.
+        nonlinearity (bool, optional): Whether to include nonlinearity in the system.
+        nonlinear_case (str, optional): Type of nonlinearity to apply ("x_squared", "x_sin(x)", "x_log(x)").
+        plot_actions (bool, optional): Whether to plot actions during the experiment.
+        plot_states (bool, optional): Whether to plot states during the experiment.
+        save_file_name (str, optional): Prefix for saving result files.
+        run_optimal (bool, optional): If True, runs only the optimal controller (LQR).
+
+    Returns:
+        None. Results are saved to files, and progress is printed to the console.
+    """
+
     problems = get_problem_formulations()
 
     try:
@@ -490,6 +562,70 @@ def start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,
 
 
 def run_all_tests(run_optimal=False):
+    """
+    Run a comprehensive suite of experiments under various configurations.
+
+    This function automates the execution of multiple experiments by calling `start_experiment` with different parameters.
+    It tests the performance of controllers under a variety of conditions, including varying noise levels,
+    skewness in noise distribution, disturbances at specific time steps, and introducing nonlinearities in the system.
+
+    Parameters:
+        run_optimal (bool): If True, runs only the optimal controller (LQR) for all tests.
+                            If False, runs the specified adaptive algorithms.
+
+    Experiments conducted:
+        1. Standard variant:
+            - Standard noise (normal distribution with mean 0 and standard deviation 1).
+            - No disturbances.
+            - No skewness.
+            - No nonlinearities.
+            - `save_file_name="standard"`
+
+        1.5. Standard variant with extended horizon:
+            - Same as the standard variant but with a longer horizon
+            - `save_file_name="standard_longrun"`
+
+        2. Different noise levels:
+            - Noise multiplier of 0.1 (reduced noise).
+                - `save_file_name="noise01"`
+            - Noise multiplier of 1.0 (standard noise).
+                - `save_file_name="noise1"` (same as the standard variant)
+            - Noise multiplier of 10.0 (increased noise).
+                - `save_file_name="noise10"`
+
+        3. Experiments with skewness at different noise levels:
+            - Skewness of -10 with noise multiplier of 1.0.
+                - `save_file_name="noise1skewMin10"`
+            - Skewness of +10 with noise multiplier of 1.0.
+                - `save_file_name="noise1skewPlu10"`
+            - Skewness of +10 with noise multiplier of 10.0.
+                - `save_file_name="noise10skewPlu10"`
+            - Skewness of -10 with noise multiplier of 10.0.
+                - `save_file_name="noise10skewMin10"`
+
+        4. Experiment with a disturbance:
+            - Standard noise.
+            - A disturbance introduced at time step `t = 70`.
+                - `save_file_name="disturbance"`
+
+        5. Experiments with nonlinearities:
+            - Nonlinear case "x_squared".
+                - `save_file_name="nonlinear_x_squared"`
+            - Nonlinear case "x_sin(x)".
+                - `save_file_name="nonlinear_x_sin(x)"`
+            - Nonlinear case "x_log(x)".
+                - `save_file_name="nonlinear_x_log(x)"`
+            - Note: The number of repeats (`num_repeats`) is reduced to 5 for nonlinear experiments,
+              as successful control is not guaranteed, and fewer runs suffice for analysis.
+
+    Notes:
+        - The `horizon`, `num_repeats`, `reg`, and `T_init` parameters are set at the beginning and can be adjusted as needed.
+        - The `save_file_name` parameter helps in identifying and saving the results for each experiment configuration.
+        - The `run_optimal` flag allows switching between running the optimal controller and the adaptive algorithms.
+
+    Returns:
+        None. The function executes the experiments and saves the cumulative costs for analysis.
+    """
     # Test Parameters
     horizon = 200  # length of each experiment
     num_repeats = 200  # number of repetitions
@@ -498,41 +634,41 @@ def run_all_tests(run_optimal=False):
 
     # Running experiments based on chapter "Methodology"
     # 1. Standard variant (standard noise, no disturbance, no skewness, no nonlinearity)
-    #start_experiment(horizon, num_repeats, reg, T_init, save_file_name="standard", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, save_file_name="standard", run_optimal=run_optimal)
 
     # 1.5 Standard variant with 5x time horizon
     pre_horizon = horizon
     horizon = 10000
-    #start_experiment(horizon, num_repeats, reg, T_init, save_file_name="standard_longrun", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, save_file_name="standard_longrun", run_optimal=run_optimal)
     horizon = pre_horizon
 
     # 2. Different noise levels (0.1, 1, 10)
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=0.1, save_file_name="noise01", run_optimal=run_optimal)
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0, save_file_name="noise1", run_optimal=run_optimal)  # Same as standard
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0, save_file_name="noise10",
-    #                 run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=0.1, save_file_name="noise01", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0, save_file_name="noise1", run_optimal=run_optimal)  # Same as standard
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0, save_file_name="noise10",
+                     run_optimal=run_optimal)
 
     # 3. Experiments with skewness at different noise levels
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,  #
-    #                 skewness=-10, save_file_name="noise1skewMin10", run_optimal=run_optimal)
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,  #
-    #                 skewness=10, save_file_name="noise1skewPlu10", run_optimal=run_optimal)
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0,
-    #                 skewness=10, save_file_name="noise10skewPlu10", run_optimal=run_optimal)
-    #start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0,
-    #                 skewness=-10, save_file_name="noise10skewMin10", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,  #
+                     skewness=-10, save_file_name="noise1skewMin10", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=1.0,  #
+                     skewness=10, save_file_name="noise1skewPlu10", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0,
+                     skewness=10, save_file_name="noise10skewPlu10", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, noise_multiplicator=10.0,
+                     skewness=-10, save_file_name="noise10skewMin10", run_optimal=run_optimal)
 
     # 4. Experiment with standard noise and a disturbance at time step t = 100
-    #start_experiment(horizon, num_repeats, reg, T_init, disturbance_step=True,  #
-    #                 disturbance_time=100, save_file_name="disturbance", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, disturbance_step=True,  #
+                     disturbance_time=100, save_file_name="disturbance", run_optimal=run_optimal)
 
     # 5. Experiment with normal noise and nonlinear
     # "x_squared", "x_sin(x)", "x_log(x)"
     num_repeats = 5  # In the nonlinear setting, we do not assume, that the algorithm is able to successfully control the control system. 5 Runs are required for plotting.
-    #start_experiment(horizon, num_repeats, reg, T_init, nonlinearity=True, save_file_name="nonlinear_x_squared",
-    #                 nonlinear_case="x_squared", run_optimal=run_optimal)
-    #start_experiment(horizon, num_repeats, reg, T_init, nonlinearity=True, save_file_name="nonlinear_x_sin(x)",
-    #                 nonlinear_case="x_sin(x)", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, nonlinearity=True, save_file_name="nonlinear_x_squared",
+                     nonlinear_case="x_squared", run_optimal=run_optimal)
+    start_experiment(horizon, num_repeats, reg, T_init, nonlinearity=True, save_file_name="nonlinear_x_sin(x)",
+                     nonlinear_case="x_sin(x)", run_optimal=run_optimal)
     start_experiment(horizon, num_repeats, reg, T_init, nonlinearity=True, save_file_name="nonlinear_x_log(x)",
                      nonlinear_case="x_log(x)", run_optimal=run_optimal)
 
@@ -624,6 +760,15 @@ def generate_cum_cost_plot(save_file_name, problem_name):
 
 
 def cumulative_cost_to_cost(filename):
+    """
+    Convert cumulative costs to single-step costs and save them.
+
+    Parameters:
+        filename (str): Base name of the cumulative cost file (without path or extension).
+
+    The function reads cumulative costs from 'cum_cost_of_t/{filename}.npy',
+    computes the single-step costs, and saves them to 'costs_of_t/Cost_{filename}.npy'.
+    """
     try:
         # Ensure the directory exists
         output_dir = "costs_of_t"
@@ -724,6 +869,17 @@ def plot_cost_of_t(save_file_name, problem_name):
 
 
 def plot_cost_progression_for_runs(save_file_name, problem_name):
+    """
+    Plot the cost progression over time for multiple runs of different algorithms.
+
+    Parameters:
+        save_file_name (str): Base filename for loading cost data.
+        problem_name (str): Name of the problem (e.g., "Boeing", "UAV", "CartPole").
+
+    This function loads cost data for the specified problem and algorithms (ARBMLE, STABL, PPO, LQR),
+    applies an upper cost limit to avoid extreme values, and plots the cost progression over time
+    for a specified number of runs. The plots are saved in the 'plots/nonlinear_cost_of_t/' directory.
+    """
     # Load the cost data for the algorithms
     cost_ARBMLE = np.load(f'costs_of_t/Cost_ARBMLE_{save_file_name}_{problem_name}.npy')
     cost_STABL = np.load(f'costs_of_t/Cost_STABL_{save_file_name}_{problem_name}.npy')
@@ -761,12 +917,6 @@ def plot_cost_progression_for_runs(save_file_name, problem_name):
     cost_STABL = smooth_exit(cost_STABL, upper_limit)
     cost_PPO = smooth_exit(cost_PPO, upper_limit)
     cost_OPTIMAL = smooth_exit(cost_OPTIMAL, upper_limit)
-
-    #print(problem_name)
-    #print(f"Costs ARBMLE: {cost_ARBMLE.shape}")
-    #print(f"Costs STABL: {cost_STABL.shape}")
-    #print(f"Costs PPO: {cost_PPO.shape}")
-    #print(f"Costs LQR: {cost_OPTIMAL.shape}\n")
 
     # Create a plot for each algorithm
     fig, ax = plt.subplots(2, 2, figsize=(12, 10))
@@ -1094,16 +1244,34 @@ def plot_cum_regret(save_file_name, problem_name):
     plt.close()
 
 
-if __name__ == '__main__':
-    run_optimal_tests = True
-    run_tests = True
-    run_single_case = False
-    convert_cum_cost_to_cost = True
-    bool_plot_cum_cost = False
-    bool_plot_cost_of_t = False
-    bool_plot_cum_regret = False
-    bool_plot_cost_progression = True
-    bool_plot_triplets = False
+def main(
+    run_optimal_tests=True,
+    run_tests=True,
+    run_single_case=False,
+    convert_cum_cost_to_cost=True,
+    bool_plot_cum_cost=True,
+    bool_plot_cost_of_t=True,
+    bool_plot_cum_regret=True,
+    bool_plot_cost_progression=True,
+    bool_plot_triplets=False):
+    """
+    Main function to execute experiments and generate plots based on specified flags.
+
+    Parameters:
+        run_optimal_tests (bool): Run experiments using the optimal controller if True.
+        run_tests (bool): Run all experiments with adaptive algorithms if True.
+        run_single_case (bool): Run a single experiment instance if True.
+        convert_cum_cost_to_cost (bool): Convert cumulative costs to per-step costs if True.
+        bool_plot_cum_cost (bool): Generate plots of cumulative costs if True.
+        bool_plot_cost_of_t (bool): Generate plots of cost over time if True.
+        bool_plot_cum_regret (bool): Generate plots of cumulative regret if True.
+        bool_plot_cost_progression (bool): Plot cost progression for individual runs if True.
+        bool_plot_triplets (bool): Generate triplet plots for cost and cumulative regret if True.
+
+    This function orchestrates the execution of experiments and the generation of plots
+    based on the provided boolean flags. It can run optimal controller tests, adaptive
+    algorithm tests, convert cost data, and produce various plots for analysis.
+    """
 
     # to run optimal controller for all tests:
     if run_optimal_tests:
@@ -1120,9 +1288,9 @@ if __name__ == '__main__':
     # to convert cumulative cost to cost(t)
     if convert_cum_cost_to_cost:
         algorithms = ["ARBMLE", "STABL", "PPO", "OPTIMAL"]
-        save_names = ["nonlinear_x_squared", "nonlinear_x_sin(x)", "nonlinear_x_log(x)"] #["standard", "noise01", "noise10", "noise1skewPlu10", "noise1skewMin10", "noise10skewPlu10",
-                      #"noise10skewMin10", "disturbance", "standard_longrun", "nonlinear_x_squared",
-                      #"nonlinear_x_sin(x)", "nonlinear_x_log(x)"]
+        save_names = ["standard", "noise01", "noise10", "noise1skewPlu10", "noise1skewMin10", "noise10skewPlu10",
+                      "noise10skewMin10", "disturbance", "standard_longrun", "nonlinear_x_squared",
+                      "nonlinear_x_sin(x)", "nonlinear_x_log(x)"]
         problem_names = ["Boeing", "UAV", "CartPole"]
         param_grid = list(itertools.product(algorithms, save_names, problem_names))
 
@@ -1152,8 +1320,8 @@ if __name__ == '__main__':
     # to plot cumulative regret
     if bool_plot_cum_regret:
         save_names = \
-         ["standard", "noise01", "noise10", "noise1skewPlu10", "noise1skewMin10", "noise10skewPlu10",
-         "noise10skewMin10", "disturbance", "standard_longrun"]
+            ["standard", "noise01", "noise10", "noise1skewPlu10", "noise1skewMin10", "noise10skewPlu10",
+             "noise10skewMin10", "disturbance", "standard_longrun"]
         problem_names = ["Boeing", "UAV", "CartPole"]
         param_grid = list(itertools.product(save_names, problem_names))
 
@@ -1175,3 +1343,10 @@ if __name__ == '__main__':
         for problem_name in problem_names:
             plot_cost_of_t_triple(problem_name)
             plot_cum_regret_triplets(problem_name)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
