@@ -222,6 +222,15 @@ class AdaptiveController():
         return theta_star
 
     def pd_inv_sqrt(self, P):
+        """
+        Compute the inverse square root of a positive definite matrix P.
+
+        Parameters:
+            P (np.ndarray): Symmetric positive definite matrix.
+
+        Returns:
+            np.ndarray: Inverse square root of P.
+        """
         assert len(P.shape) == 2
         assert P.shape[0] == P.shape[1]
         w, v = np.linalg.eigh(P)
@@ -230,6 +239,18 @@ class AdaptiveController():
         return v.dot(np.diag(1 / np.sqrt(w))).dot(v.T)
 
     def get_gain_matrix(self, theta):
+        """
+        Compute the LQR gain matrix K, solution P to the Riccati equation, and cost J for given system parameters.
+
+        Parameters:
+            theta (np.ndarray): Combined system parameters [A | B], where A and B are concatenated horizontally.
+
+        Returns:
+            K (np.ndarray): LQR gain matrix.
+            P (np.ndarray): Solution to the discrete-time Riccati equation.
+            J (float): Trace of P, representing the estimated cost.
+
+        """
         A = theta[:, :self.n]
         B = theta[:, self.n:]
         K, P, _ = control.dlqr(A, B, self.Q, self.R)
@@ -240,6 +261,15 @@ class AdaptiveController():
         return -1 * np.dot(K, self.x)
 
     def get_next_state(self, w):
+        """
+        Compute the next state of the system, applying optional nonlinearities.
+
+        Parameters:
+            w (np.ndarray): Process noise vector.
+
+        Returns:
+            np.ndarray: The next state vector.
+        """
         next_state = np.dot(self.A_star, self.x) + np.dot(self.B_star, self.u) + w
         # Handle nonlinearity cases
         if self.nonlinearity:
@@ -260,6 +290,7 @@ class AdaptiveController():
         return np.dot(np.dot(x.T, self.Q), x) + np.dot(np.dot(u.T, self.R), u)
 
     def get_lse(self, reg):
+        """ Returns the least-squares estimate for the model-based algorithms using the regularization parameter."""
         X1 = np.dot(self.Z.T, self.Z) + reg * np.eye(self.n + self.m)
         X2 = np.dot(self.Z.T, self.X)
         theta_hat, _, _, _ = np.linalg.lstsq(X1, X2, rcond=None)
@@ -494,6 +525,15 @@ class AdaptiveController():
             plt.show()
 
     def squared_error(self, theta):
+        """
+       Compute the regularized sum of squared errors between predicted and actual states.
+
+       Parameters:
+           theta (np.ndarray): Parameter matrix used for state predictions.
+
+       Returns:
+           float: The total error, including the regularization term.
+       """
         temp1 = self.states[:, 1:self.t] - np.dot(theta, self.Z.T)
         error = np.sum(np.linalg.norm(temp1, axis=0) ** 2)
         error += self.reg * np.linalg.norm(theta)
@@ -507,13 +547,13 @@ class AdaptiveController():
     def get_stbl(self, reg):
         self.function = self.cost
         self.gradient = self.cost_gradient
-        theta = self.pgd(self.cov, self.eps, reg)
+        theta = self.pgd(self.eps, reg)
         return theta
 
     def get_aug_rbmle(self, reg):
         self.function = self.rbmle
         self.gradient = self.rbmle_gradient
-        theta = self.pgd(self.cov, self.eps, reg)
+        theta = self.pgd(self.eps, reg)
         return theta
 
     def rbmle(self, theta):
@@ -529,6 +569,15 @@ class AdaptiveController():
         return cost
 
     def cost_gradient(self, theta):
+        """
+        Compute the gradient of the cost function with respect to system parameters theta.
+
+        Parameters:
+            theta (np.ndarray): Combined system parameters [A | B].
+
+        Returns:
+            np.ndarray: Gradient matrix of the cost function.
+        """
         A = theta[:, :self.n]
         B = theta[:, self.n:]
         K, P, J = self.get_gain_matrix(theta)
@@ -546,15 +595,17 @@ class AdaptiveController():
 
         return grad
 
-    def pgd(self, cov, eps, reg):
+    def pgd(self, eps, reg):
         """
-        num_restarts: The number of times the projected gradient descent algorithm restarts from
-                      different initial points to avoid local minima. More restarts increase the
-                      chance of finding a better solution but also increase computational cost.
+        Perform projected gradient descent to minimize the objective function.
 
-        max_iters: The maximum number of gradient descent steps taken in each restart to minimize
-                   the objective function. Higher values allow more thorough convergence but result
-                   in longer runtime for each restart.
+        Parameters:
+            cov (np.ndarray): Covariance matrix for the weighted projection.
+            eps (float): Radius of the weighted ball for projection.
+            reg (float): Regularization parameter.
+
+        Returns:
+            np.ndarray: Optimal parameter vector obtained after PGD.
         """
         theta_initial = self.get_lse(reg)
         theta_opt = theta_initial
@@ -584,6 +635,7 @@ class AdaptiveController():
         return theta_opt
 
     def run_optimal(self, noise, input_noise):
+        """ Similar method to run_experiment. Running a given experiment using the optimal controller. """
         all_actions, all_states = [], []
         all_states.append(self.x)
         all_actions.append(self.u)
@@ -748,6 +800,9 @@ class AdaptiveController():
 
 # A number of different classes and methods required for PPO
 class LinearPolicy(torch.nn.Module):
+    """
+    Linear policy network for PPO, mapping states to action distributions.
+    """
     def __init__(self, state_dim, action_dim, initial_log_std=-4, std_clamp_max=0.5):
         super(LinearPolicy, self).__init__()
         # Linear mapping from state to mean of the action
@@ -781,6 +836,9 @@ class LinearPolicy(torch.nn.Module):
 
 
 class ValueNetwork(torch.nn.Module):
+    """
+    Value network for PPO, approximating the state-value function V(s).
+    """
     def __init__(self, state_dim):
         super(ValueNetwork, self).__init__()
         # P is a learnable matrix (symmetric positive definite)
