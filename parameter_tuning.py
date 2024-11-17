@@ -27,9 +27,11 @@ def get_problem_formulations():
     }
 
 
-# Methods for parameter tuning of the PPO-algorithm
 def run_ppo_experiment(A_star, B_star, Q, R, horizon, T_init, reg, cur_seed, gamma, lambda_, epsilon, lr_policy,
                        lr_value, std_clamp_max=0.5, update_steps=10, problem=None):
+    """
+    Run a PPO experiment with specified hyperparameters and return the cumulative cost.
+    """
     # Define the experiment with the given hyperparameters
     ppo = ProximalPolicyOptimization(A_star, B_star, Q, R, horizon, T_init, reg, 'PPO', cur_seed=cur_seed,
                                      gamma=gamma, lambda_=lambda_, epsilon=epsilon, lr_policy=lr_policy,
@@ -47,6 +49,22 @@ def run_ppo_experiment(A_star, B_star, Q, R, horizon, T_init, reg, cur_seed, gam
 
 
 def grid_search_ppo_multiple_problems(horizon, T_init, reg, num_repeats, output_file):
+    """
+    Perform a grid search over Proximal Policy Optimization hyperparameters across multiple problems.
+
+    This function tests various combinations of PPO hyperparameters (gamma, lambda, epsilon,
+    learning rates, standard deviation clamp, update steps) on multiple control problems.
+    It runs each combination for a specified number of repeats, averages the costs,
+    and saves the results to an output file. Previously tested combinations are skipped
+    to avoid redundant computations.
+
+    Parameters:
+        horizon (int): Length of each experiment run.
+        T_init (int): Initial time steps using a stabilizing controller.
+        reg (float): Regularization parameter.
+        num_repeats (int): Number of repetitions for averaging.
+        output_file (str): File path to save the results.
+    """
     # Define the hyperparameter grid
     gamma_values = [1.0]  # Discount factor for future rewards
     lambda_values = [1.0]  # Generalised Advantage Estimation discount factor
@@ -151,6 +169,22 @@ def grid_search_ppo_multiple_problems(horizon, T_init, reg, num_repeats, output_
 
 
 def analyze_parameter_tuning_results(input_file, algorithm, output_results_file):
+    """
+    Analyze parameter tuning results to find the best parameter configuration.
+
+    Parameters:
+        input_file (str): Path to the JSON file containing tuning results.
+        algorithm (str): Name of the algorithm ('PPO', 'ARBMLE', or 'STABL').
+        output_results_file (str): Path to save the analysis results.
+
+    The function reads tuning results, filters out failed and duplicate entries,
+    ranks parameter configurations based on cost across problems, identifies the
+    best parameters, and writes the results to an output file.
+
+    Returns:
+        dict: Best parameter configuration.
+    """
+
     # Load the data from the JSON file
     parameter_data = []
     with open(input_file, 'r') as f:
@@ -288,6 +322,24 @@ def analyze_parameter_tuning_results(input_file, algorithm, output_results_file)
 # Methods for parameter tuning of ARBMLE and StabL
 def run_model_based_experiment(A_star, B_star, Q, R, horizon, T_init, reg, cur_seed, num_restarts, max_iters, step_size,
                                rel_tol, delta, bias, S, algorithm, T_w=35, sigma_w=2, problem=None):
+    """
+    Run a model-based adaptive control experiment and return the cumulative cost.
+
+    Parameters:
+        A_star, B_star, Q, R: System matrices defining the dynamics and cost.
+        horizon (int): Total time horizon for the experiment.
+        T_init (int): Initial time steps using a stabilizing controller.
+        reg (float): Regularization parameter.
+        cur_seed (int): Random seed for reproducibility.
+        num_restarts, max_iters, step_size, rel_tol, delta, bias, S: Algorithm hyperparameters.
+        algorithm (str): Algorithm name ('ARBMLE' or 'STABL').
+        T_w (int, optional): Time window parameter (used in 'STABL').
+        sigma_w (float, optional): Noise standard deviation parameter.
+        problem (str, optional): Problem name for specific adjustments.
+
+    Returns:
+        float: Cumulative cost after T_init steps.
+    """
     # Define the experiment with the given hyperparameters
     alg = AdaptiveController(A_star, B_star, Q, R, horizon, T_init, reg, algorithm, cur_seed=cur_seed,
                              num_restarts=num_restarts, max_iters=max_iters, step_size=step_size,
@@ -305,9 +357,23 @@ def run_model_based_experiment(A_star, B_star, Q, R, horizon, T_init, reg, cur_s
 
 
 def grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats, output_file, algorithm):
+    """
+    Perform grid search over hyperparameters for ARBMLE or STABL across multiple problems.
+
+    Parameters:
+        horizon (int): Experiment length.
+        T_init (int): Initial stabilizing steps.
+        reg (float): Regularization parameter.
+        num_repeats (int): Number of repetitions for averaging.
+        output_file (str): File to save results.
+        algorithm (str): 'ARBMLE' or 'STABL'.
+
+    This function tests various hyperparameter combinations for the specified algorithm
+    on multiple control problems, records the average costs, and saves the results.
+    """
     # Define the hyperparameter grid
     num_restarts_values, max_iters_values, step_size_values, rel_tol_values, delta_values, bias_values, \
-    T_w_values, sigma_w_values, S_values = None, None, None, None, None, None, None, None, None
+        T_w_values, sigma_w_values, S_values = None, None, None, None, None, None, None, None, None
 
     if algorithm == 'ARBMLE':
         num_restarts_values = [5]  # Number of restarts for optimization
@@ -471,35 +537,42 @@ def grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats,
                 print(f"Estimated total time for {total_combinations} parameter constellations: "
                       f"{estimated_total_time / 60:.2f} minutes ({estimated_total_time / 3600:.2f} hours)" + Back.RESET)
 
-
-if __name__ == '__main__':
-    analyse_results = True
-
+def main():
     # Hyperparameter tuning setup
     horizon = 200
     T_init = 30
     reg = 1e-4
     num_repeats = 20  # Number of repetitions for averaging results across each problem
+    output_file_ppo = 'ppo_hyperparameter_tuning_results_multiple_problems.json'
+    output_file_arbmle = 'arbmle_hyperparameter_tuning_results_multiple_problems.json'
+    output_file_stabl = 'stabl_hyperparameter_tuning_results_multiple_problems.json'
+
+    # Start the grid search for PPO across multiple problems
+    grid_search_ppo_multiple_problems(horizon, T_init, reg, num_repeats, output_file_ppo)
+
+    # Start the grid search for ARBMLE across multiple problems
+    alg = "ARBMLE"
+    grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats, output_file_arbmle, alg)
+
+    # Start the grid search for STABL across multiple problems
+    alg = "STABL"
+    grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats, output_file_stabl, alg)
+
+
+def analyse_results():
     result_file = "parameter_constellations.txt"
     output_file_ppo = 'ppo_hyperparameter_tuning_results_multiple_problems.json'
     output_file_arbmle = 'arbmle_hyperparameter_tuning_results_multiple_problems.json'
     output_file_stabl = 'stabl_hyperparameter_tuning_results_multiple_problems.json'
 
-    if analyse_results:
-        analyze_parameter_tuning_results(output_file_ppo, "PPO", result_file)
-        analyze_parameter_tuning_results(output_file_arbmle, "ARBMLE", result_file)
-        analyze_parameter_tuning_results(output_file_stabl, "STABL", result_file)
-    else:
-        # Start the grid search for PPO across multiple problems
-        grid_search_ppo_multiple_problems(horizon, T_init, reg, num_repeats, output_file_ppo)
-        _ = analyze_parameter_tuning_results(output_file_ppo, "PPO", result_file)
+    analyze_parameter_tuning_results(output_file_ppo, "PPO", result_file)
+    analyze_parameter_tuning_results(output_file_arbmle, "ARBMLE", result_file)
+    analyze_parameter_tuning_results(output_file_stabl, "STABL", result_file)
 
-        # Start the grid search for ARBMLE across multiple problems
-        alg = "ARBMLE"
-        grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats, output_file_arbmle, alg)
-        _ = analyze_parameter_tuning_results(output_file_arbmle, alg, result_file)
 
-        # Start the grid search for STABL across multiple problems
-        alg = "STABL"
-        grid_search_model_based_multiple_problems(horizon, T_init, reg, num_repeats, output_file_stabl, alg)
-        _ = analyze_parameter_tuning_results(output_file_stabl, alg, result_file)
+if __name__ == '__main__':
+    main()
+    analyse_results()
+
+
+
